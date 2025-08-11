@@ -25,25 +25,13 @@ jobs:
       - name: Build App
         run: npm run build
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-build
-          path: |
-            dist/
-            package.json
-            package-lock.json
-            node_modules/
-
   deploy:
     runs-on: ubuntu-latest
     needs: build
 
     steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: app-build
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Configure SSH
         env:
@@ -60,12 +48,25 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
-          rsync -avz \
+          # Create a tarball of just what we need
+          tar -czf deploy.tar.gz \
             --exclude='.git' \
+            --exclude='node_modules' \
             --exclude='.github' \
-            ./ $EC2_USER@$EC2_HOST:~/app/
+            dist/ package.json package-lock.json
 
-      - name: Install & Restart App on EC2
+          # Upload the tarball
+          scp deploy.tar.gz $EC2_USER@$EC2_HOST:~/app/
+
+          # Extract on EC2 side and install dependencies
+          ssh $EC2_USER@$EC2_HOST "
+            cd ~/app
+            tar -xzf deploy.tar.gz
+            rm deploy.tar.gz
+            npm ci --production
+          "
+
+      - name: Restart App on EC2
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
@@ -74,7 +75,7 @@ jobs:
             export FNM_PATH=\$HOME/.local/share/fnm
             export PATH=\$FNM_PATH:\$PATH
             eval \"\$(fnm env)\"
-            cd ~/app && npm ci --production
+            cd ~/app
             pm2 delete nodejs-app || true
             pm2 start dist/server.js --name nodejs-app
           "

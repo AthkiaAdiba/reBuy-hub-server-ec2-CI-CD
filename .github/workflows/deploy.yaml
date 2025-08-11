@@ -25,25 +25,13 @@ jobs:
       - name: Build App
         run: npm run build
 
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: app-build
-          path: |
-            dist/
-            package.json
-            package-lock.json
-            node_modules/
-
   deploy:
     runs-on: ubuntu-latest
     needs: build
 
     steps:
-      - name: Download build artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: app-build
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Configure SSH
         env:
@@ -62,6 +50,7 @@ jobs:
         run: |
           rsync -avz \
             --exclude='.git' \
+            --exclude='node_modules' \
             --exclude='.github' \
             ./ $EC2_USER@$EC2_HOST:~/app/
 
@@ -70,11 +59,101 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
+          ssh $EC2_USER@$EC2_HOST"
+          export FNM_PATH=\$HOME/.local/share/fnm && \
+          export PATH=\$FNM_PATH:\$PATH && \
+          eval \"\$(fnm env)\" && \
+          cd ~/app && npm ci --production"
+
           ssh $EC2_USER@$EC2_HOST "
-            export FNM_PATH=\$HOME/.local/share/fnm
-            export PATH=\$FNM_PATH:\$PATH
-            eval \"\$(fnm env)\"
-            cd ~/app && npm ci --production
-            pm2 delete nodejs-app || true
-            pm2 start dist/server.js --name nodejs-app
-          "
+          export FNM_PATH=\$HOME/.local/share/fnm && \
+          export PATH=\$FNM_PATH:\$PATH && \
+          eval \"\$(fnm env)\" && \
+          pm2 delete nodejs-app || true"
+
+          ssh $EC2_USER@$EC2_HOST "
+          export FNM_PATH=\$HOME/.local/share/fnm && \
+          export PATH=\$FNM_PATH:\$PATH && \
+          eval \"\$(fnm env)\" && \
+          cd ~/app && pm2 start dist/server.js --name nodejs-app"
+
+# name: Deploy to EC2
+
+# on:
+#   push:
+#     branches: ['main']
+#   pull_request:
+#     branches: ['main']
+
+# jobs:
+#   build:
+#     runs-on: ubuntu-latest
+
+#     steps:
+#       - name: Checkout code
+#         uses: actions/checkout@v4
+
+#       - name: Install Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: 22.11
+
+#       - name: Install Dependencies
+#         run: npm ci --ignore-scripts
+
+#       - name: Build App
+#         run: npm run build
+
+#       - name: Upload build artifacts
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: app-build
+#           path: |
+#             dist/
+#             package.json
+#             package-lock.json
+#             node_modules/
+
+#   deploy:
+#     runs-on: ubuntu-latest
+#     needs: build
+
+#     steps:
+#       - name: Download build artifacts
+#         uses: actions/download-artifact@v4
+#         with:
+#           name: app-build
+
+#       - name: Configure SSH
+#         env:
+#           SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+#           EC2_HOST: ${{ secrets.EC2_HOST }}
+#         run: |
+#           mkdir -p ~/.ssh
+#           echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+#           chmod 600 ~/.ssh/id_rsa
+#           ssh-keyscan -H $EC2_HOST >> ~/.ssh/known_hosts
+
+#       - name: Upload App to EC2
+#         env:
+#           EC2_HOST: ${{ secrets.EC2_HOST }}
+#           EC2_USER: ${{ secrets.EC2_USER }}
+#         run: |
+#           rsync -avz \
+#             --exclude='.git' \
+#             --exclude='.github' \
+#             ./ $EC2_USER@$EC2_HOST:~/app/
+
+#       - name: Install & Restart App on EC2
+#         env:
+#           EC2_HOST: ${{ secrets.EC2_HOST }}
+#           EC2_USER: ${{ secrets.EC2_USER }}
+#         run: |
+#           ssh $EC2_USER@$EC2_HOST "
+#             export FNM_PATH=\$HOME/.local/share/fnm
+#             export PATH=\$FNM_PATH:\$PATH
+#             eval \"\$(fnm env)\"
+#             cd ~/app && npm ci --production
+#             pm2 delete nodejs-app || true
+#             pm2 start dist/server.js --name nodejs-app
+#           "

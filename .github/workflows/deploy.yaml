@@ -33,6 +33,7 @@ jobs:
             dist/
             package.json
             package-lock.json
+            node_modules/
 
   deploy:
     runs-on: ubuntu-latest
@@ -43,7 +44,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: app-build
-          path: deployment/
 
       - name: Configure SSH
         env:
@@ -60,23 +60,12 @@ jobs:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
         run: |
-          # Create a tarball from the downloaded artifacts
-          cd deployment
-          tar -czf ../deploy.tar.gz .
-          cd ..
+          rsync -avz \                                          
+            --exclude='.git' \
+            --exclude='.github' \
+            ./ $EC2_USER@$EC2_HOST:~/app/
 
-          # Upload the tarball
-          scp deploy.tar.gz $EC2_USER@$EC2_HOST:~/app/
-
-          # Extract on EC2 side and install dependencies
-          ssh $EC2_USER@$EC2_HOST "
-            cd ~/app
-            tar -xzf deploy.tar.gz
-            rm deploy.tar.gz
-            npm ci --production
-          "
-
-      - name: Restart App on EC2
+      - name: Install & Restart App on EC2
         env:
           EC2_HOST: ${{ secrets.EC2_HOST }}
           EC2_USER: ${{ secrets.EC2_USER }}
@@ -85,7 +74,7 @@ jobs:
             export FNM_PATH=\$HOME/.local/share/fnm
             export PATH=\$FNM_PATH:\$PATH
             eval \"\$(fnm env)\"
-            cd ~/app
+            cd ~/app && npm ci --production
             pm2 delete nodejs-app || true
             pm2 start dist/server.js --name nodejs-app
           "
